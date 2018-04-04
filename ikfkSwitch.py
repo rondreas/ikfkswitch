@@ -31,7 +31,8 @@ def get_hierarchy(start, end):
 
     """
 
-    assert (end in start.listRelatives(allDescendents=True))
+    msg = "{} not in hierarchy of {}".format(end.nodeName(), start.nodeName())
+    assert (end in start.listRelatives(allDescendents=True)), msg
 
     hierarchy = deque([end])
     current = end
