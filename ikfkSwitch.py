@@ -55,16 +55,7 @@ def get_iks():
     ik_hierarchies = list()
 
     for handle in ik_handles:
-        # IK handle is connected with some message attributes, so we can grab the associated nodes directly,
-        end_effector = handle.getAttr('endEffector')
-        start_joint = handle.getAttr('startJoint')
-
-        # Effector will have connections from the end joint into it's translate, so pick first best connection
-        # from a joint.
-        end_joint = end_effector.listConnections(type='joint')[0]
-
-        # Push the hierarchy to list and recast to a standard list object,
-        ik_hierarchies.append(list(get_hierarchy(start_joint, end_joint)))
+        ik_hierarchies.append(handle.getJointList())
 
     return ik_hierarchies
 
