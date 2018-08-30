@@ -18,6 +18,7 @@ except ImportError:
     from shiboken import wrapInstance
 
 # TODO Working QTreeWidget that accepts Drag and Drop from Maya Outliner.
+# TODO Validation of attribute name prior to making connections,
 
 # Get the Maya window so we can parent our widget to it.
 mayaMainWindowPtr = omui.MQtUtil.mainWindow()
@@ -102,6 +103,28 @@ def matching_matrices(search):
     return result
 
 
+def add_attribute(node, attr):
+    """ Function for adding attributes, handling situations where the attribute already exists, such as in
+    the case of user errors. Or the attribute exist and already seem to be connected. """
+
+    # If attribute not found, create it.
+    if not node.listAttr(userDefined=True, string=attr):
+        print("Not made yet")
+        pm.addAttr(node, longName=attr)
+
+    else:
+        print("Exists!")
+        attribute = node.nodeName() + '.' + attr
+        if not pm.listConnections(attribute):
+            print("No connections made... deleting attr")
+            pm.deleteAttr(attribute)
+
+        else:
+            print("Connections are made, doing nothing.")
+            # The Attribute exits, and has connections
+            pass
+
+
 class IKFKSwitch(object):
     """ Blend two sources, and output their result to target. """
 
@@ -134,16 +157,15 @@ class IKFKSwitch(object):
 
             self.blendNodes.append(pairBlend)
 
-    def attach(self, controller, name='IKFK'):
+    def attach(self, controllers, name='IKFK'):
         """ Method for connecting all blend nodes blend attribute to a custom attribute on controller. """
 
-        if isinstance(controller, str):
-            controller = pm.ls(controller)[0]
+        locator = pm.spaceLocator(name='{}Container'.format(name))
+        shape = locator.getShape()
 
-        # TODO Check to see if attr already exists,...
         pm.addAttr(
-            controller,
-            longName=name,
+            shape,
+            longName="blend",
             attributeType='double',
             keyable=True,
             max=1.0,  # sourceB
@@ -151,8 +173,20 @@ class IKFKSwitch(object):
             defaultValue=0.0
         )
 
+        # Set locators shape to invisible and hide unwanted attributes.
+        shape.visibility.set(False)
+
         for node in self.blendNodes:
-            pm.connectAttr(controller.nodeName() + "." + name, node.weight)
+            pm.connectAttr(shape.blend, node.weight)
+
+        # Parent an instance of the locators shape to each controllers transform
+        for controller in controllers:
+            pm.parent(
+                shape,
+                controller,
+                add=True,
+                shape=True
+            )
 
     def focus(self):
         """ Show in Node Window. """
@@ -176,97 +210,149 @@ class Window(QWidget):
         self.setWindowTitle("IKFK Switch")
 
         layout = QGridLayout()
-
-        self.ctrl = QLineEdit()
-        self.name = QLineEdit()
-
-        layout.addWidget(QLabel("Controller:"), 0, 0)
-        layout.addWidget(self.ctrl, 0, 1)
-
-        layout.addWidget(QLabel("Attribute Name:"), 0, 2)
-        layout.addWidget(self.name, 0, 3)
-
-        # Search Replace,
-        self.searchLineEdit = QLineEdit("_bn")
-        self.replaceIKLineEdit = QLineEdit("_ik")
-        self.replaceFKLineEdit = QLineEdit("_fk")
-
-        layout.addWidget(QLabel("Search:"), 1, 0)
-        layout.addWidget(self.searchLineEdit, 1, 1)
-        layout.addWidget(QLabel("Replace IK:"), 2, 0)
-        layout.addWidget(self.replaceIKLineEdit, 2, 1)
-        layout.addWidget(QLabel("Replace FK:"), 2, 2)
-        layout.addWidget(self.replaceFKLineEdit, 2, 3)
-
-        doItBtn = QPushButton('Apply')
-        doItBtn.clicked.connect(self.doit)
-
-        layout.addWidget(doItBtn, 4, 0, 1, 4, Qt.AlignHCenter)
-
         self.setLayout(layout)
 
-    def doit(self):
-        """ Quick hack to not sit ponder for too long how to implement this thing. """
+        self.sources_layout()
+        self.target_layout()
+        self.controllers_layout()
 
-        sel = pm.ls(sl=True, type='joint')
+        horizontal_layout = QHBoxLayout()
 
-        ik = list()
-        fk = list()
+        horizontal_layout.addWidget(QLabel("Name:"))
 
-        ctrl = pm.ls(self.ctrl.text())[0]
+        self.name = QLineEdit()
+        horizontal_layout.addWidget(self.name)
 
-        for item in sel:
+        btn = QPushButton('Foo')
+        btn.clicked.connect(self.foo)
+        horizontal_layout.addWidget(btn)
 
-            ik.append(
-                pm.ls(item.nodeName().replace(
-                    self.searchLineEdit.text(),
-                    self.replaceIKLineEdit.text()
-                    ),
-                    type='joint'
-                )[0]
-            )
+        layout.addLayout(horizontal_layout, 1, 1, 1, 2, Qt.AlignHCenter)
 
-            fk.append(
-                pm.ls(item.nodeName().replace(
-                    self.searchLineEdit.text(),
-                    self.replaceFKLineEdit.text()
-                    ),
-                    type='joint'
-                )[0]
-            )
+        # Resize to smallest recommended size.
+        self.resize(self.minimumSizeHint())
 
-        switch = IKFKSwitch(fk, ik, sel)
-        switch.attach(ctrl, self.name.text())
+    def sources_layout(self):
 
-    def getSelected(self):
-        """ """
-        selection = pm.selected()
+        groupbox = QGroupBox("Sources")
+        layout = QGridLayout()
 
-        if not selection:
-            # Nothing selected, set empty string.
-            pass
-        else:
-            # Load first selection to line edit.
-            self.ctrl.setText(selection[0].nodeName())
+        self.sourceA = ListWidget()
+        self.sourceB = ListWidget()
+
+        layout.addWidget(self.sourceA, 0, 0)
+        layout.addWidget(self.sourceB, 0, 1)
+
+        groupbox.setLayout(layout)
+
+        self.layout().addWidget(groupbox, 0, 0, 1, 2)
+
+    def target_layout(self):
+
+        groupbox = QGroupBox("Target")
+        layout = QGridLayout()
+
+        self.target = ListWidget()
+        layout.addWidget(self.target)
+
+        groupbox.setLayout(layout)
+
+        self.layout().addWidget(groupbox, 0, 2)
+
+    def controllers_layout(self):
+
+        groupbox = QGroupBox("Controllers")
+        layout = QGridLayout()
+
+        self.controllers = ListWidget()
+        layout.addWidget(self.controllers)
+
+        groupbox.setLayout(layout)
+
+        self.layout().addWidget(groupbox, 0, 3)
+
+    def foo(self):
+
+        if self.name.text():
+            a = pm.ls(self.sourceA.itemDagPaths())
+            b = pm.ls(self.sourceB.itemDagPaths())
+            target = pm.ls(self.target.itemDagPaths())
+            controllers = pm.ls(self.controllers.itemDagPaths())
+
+            switch = IKFKSwitch(a, b, target)
+            switch.attach(controllers, self.name.text())
 
 
-class HierarchyWidget(QTreeWidget):
-    """ Subclass of QTreeWidget to support Drag and Drop in Maya. """
-
+class ListWidget(QListWidget):
     def __init__(self, *args, **kwargs):
-        super(HierarchyWidget, self).__init__(*args, **kwargs)
+        super(ListWidget, self).__init__(*args, **kwargs)
+
+        # Set and create connections for custom context menu
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.showContextMenu)
 
         self.setAcceptDrops(True)
 
-        # Create top level items,
-        ik = QTreeWidgetItem(self)
-        ik.setText(0, 'IK')
+    def itemDagPaths(self):
+        """ Return the DAG Paths for each item in list as a string. """
 
-        fk = QTreeWidgetItem(self)
-        fk.setText(0, 'FK')
+        # Thinking about it, I guess I could just store the list of DAG Paths as I create the items
+        # and then access that one instead of iterating items. This wouldn't allow for sorting or if
+        # I later decide to do some other alterations to the list.
+        result = list()
 
-        driven = QTreeWidgetItem(self)
-        driven.setText(0, 'Driven')
+        # Iterate over i items in widget and access the item
+        for i in range(self.count()):
+            item = self.item(i)
+
+            # Data will be a string representing the DAG Path.
+            result.append(item.data(Qt.UserRole))
+
+        return result
+
+    def showContextMenu(self, pos):
+
+        position = self.mapToGlobal(pos)
+
+        # Create a top level menu
+        menu = QMenu()
+
+        """
+        Commented out this chunk as it doest work as good as I intended, would need to handle 
+        sorting the hierarchies and also the getJointList skips the end joint of the chain.
+        
+        # And a submenu for accessing IK Handles
+        ikMenu = QMenu("IK Handles")
+
+        menu.addMenu(ikMenu)
+
+        # Generate an action for each ik handle in scene.
+        ikHandles = pm.ls(type='ikHandle')
+        for ikHandle in ikHandles:
+            action = IKAction(ikHandle.nodeName(), ikMenu, self, ikHandle)
+            ikMenu.addAction(action)
+            
+        """
+
+        action = QAction("Add Selected", menu)
+        action.triggered.connect(lambda arg=action: self.populate(pm.ls(selection=True, type='transform'), clear=False))
+        menu.addAction(action)
+
+        clear_action = QAction("Clear", menu)
+        clear_action.triggered.connect(self.clear)
+        menu.addAction(clear_action)
+
+        menu.exec_(position)
+
+    def populate(self, items, clear=True):
+
+        if clear:
+            self.clear()
+
+        for item in items:
+            label = QListWidgetItem(item.nodeName())
+            label.setData(Qt.UserRole, item.longName())
+            self.addItem(label)
 
     def dragEnterEvent(self, event):
         """ Reimplementing event to accept plain text, """
@@ -283,18 +369,23 @@ class HierarchyWidget(QTreeWidget):
             event.ignore()
 
     def dropEvent(self, event):
-        """ """
-        data = event.mimeData().data('text/plain')
+        if event.mimeData().hasFormat('text/plain'):
+            event.accept()
 
-        items = data.split('\n')
+            data = event.mimeData().data('text/plain')
+            items = data.split('\n')
+            dagPaths = map(lambda item: item.data(), items)
 
-        bu = '|'
-        for item in items:
+            self.populate(pm.ls(dagPaths))
 
-            x = pm.ls(item.data())[0]
-            bu += '-'
-            print("{}{}".format(bu, x.nodeName()))
+        else:
+            event.ignore()
 
+class IKAction(QAction):
+    def __init__(self, text, parent, listWidget, handle):
+        super(IKAction, self).__init__(text, parent)
+
+        self.triggered.connect(lambda arg=self: listWidget.populate(handle.getJointList(), clear=False))
 
 def ui():
     window = Window()
