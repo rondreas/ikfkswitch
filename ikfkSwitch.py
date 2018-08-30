@@ -128,7 +128,10 @@ def add_attribute(node, attr):
 class IKFKSwitch(object):
     """ Blend two sources, and output their result to target. """
 
-    def __init__(self, sourceA, sourceB, target):
+    def __init__(self, name, sourceA, sourceB, target):
+
+        self.name = name
+
         self.inputs = [sourceA, sourceB]
         self.output = target
 
@@ -157,10 +160,10 @@ class IKFKSwitch(object):
 
             self.blendNodes.append(pairBlend)
 
-    def attach(self, controllers, name='IKFK'):
+    def attach(self, controllers):
         """ Method for connecting all blend nodes blend attribute to a custom attribute on controller. """
 
-        locator = pm.spaceLocator(name='{}Container'.format(name))
+        locator = pm.spaceLocator(name='{}Container'.format(self.name))
         shape = locator.getShape()
 
         pm.addAttr(
@@ -176,6 +179,11 @@ class IKFKSwitch(object):
         # Set locators shape to invisible and hide unwanted attributes.
         shape.visibility.set(False)
 
+        # Hide each attribute in the channel box.
+        for attr in shape.listAttr(channelBox=True):
+            attr.set(channelBox=False)
+
+        # Connect the custom attr to the weight of the pairblend nodes.
         for node in self.blendNodes:
             pm.connectAttr(shape.blend, node.weight)
 
@@ -223,8 +231,8 @@ class Window(QWidget):
         self.name = QLineEdit()
         horizontal_layout.addWidget(self.name)
 
-        btn = QPushButton('Foo')
-        btn.clicked.connect(self.foo)
+        btn = QPushButton('Apply')
+        btn.clicked.connect(self.apply)
         horizontal_layout.addWidget(btn)
 
         layout.addLayout(horizontal_layout, 1, 1, 1, 2, Qt.AlignHCenter)
@@ -271,7 +279,7 @@ class Window(QWidget):
 
         self.layout().addWidget(groupbox, 0, 3)
 
-    def foo(self):
+    def apply(self):
 
         if self.name.text():
             a = pm.ls(self.sourceA.itemDagPaths())
@@ -279,8 +287,8 @@ class Window(QWidget):
             target = pm.ls(self.target.itemDagPaths())
             controllers = pm.ls(self.controllers.itemDagPaths())
 
-            switch = IKFKSwitch(a, b, target)
-            switch.attach(controllers, self.name.text())
+            switch = IKFKSwitch(self.name.text(), a, b, target)
+            switch.attach(controllers)
 
 
 class ListWidget(QListWidget):
@@ -390,5 +398,4 @@ class IKAction(QAction):
 def ui():
     window = Window()
     window.show()
-    print(__version__)
     return window
