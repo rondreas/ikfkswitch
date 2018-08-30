@@ -17,6 +17,6 @@ ikfkSwitchUI = ikfkSwitch.ui()
 
 Save this to a shelf; Script Editor -> File -> Save Script to Shelf...
 
-## Useage ##
+## Usage ##
 
 Drag and drop nodes into the boxes, or add selected nodes through the right click menu. Fill out a name and hit apply.
